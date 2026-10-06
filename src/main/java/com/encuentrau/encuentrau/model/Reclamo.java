@@ -18,8 +18,13 @@ public class Reclamo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long objetoId;
+    // Relación real con la tabla objetos → crea la llave foránea objeto_id en la BD
+    // Así el diagrama muestra la conexión entre reclamos y objetos
+    @ManyToOne
+    @JoinColumn(name = "objeto_id", nullable = false)
+    private Objeto objeto;
 
+    // Relación real con la tabla usuarios → llave foránea usuario_id
     @ManyToOne
     @JoinColumn(name = "usuario_id", nullable = false)
     private Usuario usuario;
@@ -32,8 +37,8 @@ public class Reclamo {
 
     public Reclamo() {}
 
-    public Reclamo(Long objetoId, Usuario usuario, LocalDate fecha, String descripcion, String estado) {
-        this.objetoId = objetoId;
+    public Reclamo(Objeto objeto, Usuario usuario, LocalDate fecha, String descripcion, String estado) {
+        this.objeto = objeto;
         this.usuario = usuario;
         this.fecha = fecha;
         this.descripcion = descripcion;
@@ -43,8 +48,8 @@ public class Reclamo {
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
-    public Long getObjetoId() { return objetoId; }
-    public void setObjetoId(Long objetoId) { this.objetoId = objetoId; }
+    public Objeto getObjeto() { return objeto; }
+    public void setObjeto(Objeto objeto) { this.objeto = objeto; }
 
     public Usuario getUsuario() { return usuario; }
     public void setUsuario(Usuario usuario) { this.usuario = usuario; }

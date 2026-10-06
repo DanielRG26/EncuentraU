@@ -12,17 +12,15 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.util.List;
 
-/**
- * Servicio que concentra la lógica de negocio relacionada con objetos.
- * Toda validación de reglas del dominio ocurre aquí, nunca en el controller
- * ni en el repository.
- */
+// Esta clase contiene todas las reglas del negocio
+// Es la que decide qué se puede hacer y qué no
+// El controller le pasa las peticiones y esta clase las resuelve
 @Service
 public class ObjetoService {
 
     private final ObjetoRepository objetoRepository;
 
-    // Inyección por constructor (buena práctica en Spring)
+    // Spring conecta automáticamente el repositorio con este servicio al arrancar
     public ObjetoService(ObjetoRepository objetoRepository) {
         this.objetoRepository = objetoRepository;
     }
@@ -31,178 +29,118 @@ public class ObjetoService {
     // REGISTRAR
     // -------------------------------------------------------------------------
 
-    /**
-     * Registra un objeto encontrado en el sistema.
-     * El objeto siempre se crea con estado ENCONTRADO.
-     *
-     * Reglas:
-     * - nombre, descripcion, categoria, lugarEncontrado y fechaEncontrado
-     *   son obligatorios. Si falta alguno lanza DatosObjetoInvalidosException.
-     *
-     * @param objeto datos del objeto a registrar (sin id ni estado)
-     * @return el objeto guardado con id asignado y estado ENCONTRADO
-     */
     public Objeto registrarObjeto(Objeto objeto) {
-        validarDatosObjeto(objeto);
+        validarDatosObjeto(objeto); // primero revisa que no falte ningún dato obligatorio
 
-        // El estado inicial siempre es ENCONTRADO, sin importar lo que venga en el body
+        // Sin importar lo que mande el usuario, el estado siempre empieza como ENCONTRADO
         objeto.setEstado(EstadoObjeto.ENCONTRADO);
 
-        // Si no viene fecha, se asigna la de hoy
+        // Si no mandaron la fecha, se usa la de hoy
         if (objeto.getFechaEncontrado() == null) {
             objeto.setFechaEncontrado(LocalDate.now());
         }
 
-        return objetoRepository.save(objeto);
+        return objetoRepository.save(objeto); // guarda el objeto en la base de datos y lo devuelve con su número asignado
     }
 
     // -------------------------------------------------------------------------
     // CONSULTAR
     // -------------------------------------------------------------------------
 
-    /**
-     * Devuelve todos los objetos registrados en el sistema.
-     *
-     * @return lista de todos los objetos
-     */
     public List<Objeto> listarObjetos() {
-        return objetoRepository.findAll();
+        return objetoRepository.findAll(); // trae todos los objetos que hay en la base de datos
     }
 
-    /**
-     * Busca un objeto por su id.
-     *
-     * @param id identificador del objeto
-     * @return el objeto encontrado
-     * @throws ObjetoNoEncontradoException si no existe un objeto con ese id
-     */
     public Objeto buscarObjeto(Long id) {
+        // busca el objeto por su número; si no existe, lanza un error en vez de devolver vacío
         return objetoRepository.findById(id)
                 .orElseThrow(() -> new ObjetoNoEncontradoException(id));
     }
 
-    /**
-     * Devuelve solo los objetos que están en estado ENCONTRADO.
-     * Útil para mostrar los objetos disponibles para reclamar.
-     *
-     * @return lista de objetos disponibles
-     */
     public List<Objeto> listarObjetosDisponibles() {
+        // trae solo los objetos que están esperando ser reclamados
         return objetoRepository.findByEstado(EstadoObjeto.ENCONTRADO);
+    }
+
+    public List<Objeto> listarObjetosPorEstado(EstadoObjeto estado) {
+        // trae los objetos que tienen un estado específico (ENCONTRADO, RECLAMADO o ENTREGADO)
+        return objetoRepository.findByEstado(estado);
     }
 
     // -------------------------------------------------------------------------
     // ACTUALIZAR
     // -------------------------------------------------------------------------
 
-    /**
-     * Actualiza la información descriptiva de un objeto (nombre, descripcion,
-     * categoria, lugarEncontrado, fechaEncontrado).
-     * No permite cambiar el estado desde aquí; para eso está cambiarEstado().
-     *
-     * @param id   id del objeto a actualizar
-     * @param datos objeto con los nuevos valores
-     * @return el objeto actualizado
-     * @throws ObjetoNoEncontradoException   si no existe
-     * @throws ObjetoYaEntregadoException    si el objeto ya fue entregado
-     * @throws DatosObjetoInvalidosException si los datos nuevos son inválidos
-     */
     public Objeto actualizarObjeto(Long id, Objeto datos) {
-        Objeto existente = buscarObjeto(id);
+        Objeto existente = buscarObjeto(id); // primero busca el objeto; si no existe, lanza error
 
-        // Un objeto ENTREGADO es un caso cerrado; no se modifica
+        // Si el objeto ya fue entregado, no se puede tocar más
         if (existente.getEstado() == EstadoObjeto.ENTREGADO) {
             throw new ObjetoYaEntregadoException(id);
         }
 
-        validarDatosObjeto(datos);
+        validarDatosObjeto(datos); // revisa que los datos nuevos también sean válidos
 
+        // Reemplaza los datos viejos con los nuevos (sin tocar el estado ni el número)
         existente.setNombre(datos.getNombre());
         existente.setDescripcion(datos.getDescripcion());
         existente.setCategoria(datos.getCategoria());
         existente.setLugarEncontrado(datos.getLugarEncontrado());
         existente.setFechaEncontrado(datos.getFechaEncontrado());
 
-        return objetoRepository.save(existente);
+        return objetoRepository.save(existente); // guarda los cambios en la base de datos
     }
 
     // -------------------------------------------------------------------------
     // CAMBIAR ESTADO
     // -------------------------------------------------------------------------
 
-    /**
-     * Cambia el estado de un objeto respetando las reglas del flujo:
-     *   ENCONTRADO → RECLAMADO → ENTREGADO
-     *
-     * Reglas:
-     * - No se puede reclamar un objeto ya RECLAMADO.
-     * - No se puede reclamar ni modificar un objeto ENTREGADO.
-     * - El cambio debe seguir la secuencia definida.
-     *
-     * @param id          id del objeto
-     * @param nuevoEstado el estado al que se quiere cambiar
-     * @return el objeto con el estado actualizado
-     * @throws ObjetoNoEncontradoException si no existe
-     * @throws ObjetoYaReclamadoException  si se intenta reclamar uno ya reclamado
-     * @throws ObjetoYaEntregadoException  si se intenta operar sobre uno entregado
-     */
     public Objeto cambiarEstado(Long id, EstadoObjeto nuevoEstado) {
-        Objeto objeto = buscarObjeto(id);
+        Objeto objeto = buscarObjeto(id); // primero busca el objeto; si no existe, lanza error
         EstadoObjeto estadoActual = objeto.getEstado();
 
-        // Un objeto ENTREGADO es un caso cerrado; ningún cambio es posible
+        // Si ya fue entregado, el caso está cerrado y no se puede hacer nada más
         if (estadoActual == EstadoObjeto.ENTREGADO) {
             throw new ObjetoYaEntregadoException(id);
         }
 
-        // No se puede reclamar un objeto que ya está reclamado
+        // No tiene sentido reclamar algo que ya está reclamado
         if (estadoActual == EstadoObjeto.RECLAMADO && nuevoEstado == EstadoObjeto.RECLAMADO) {
             throw new ObjetoYaReclamadoException(id);
         }
 
         objeto.setEstado(nuevoEstado);
-        return objetoRepository.save(objeto);
+        return objetoRepository.save(objeto); // guarda el nuevo estado en la base de datos
     }
 
     // -------------------------------------------------------------------------
     // ELIMINAR
     // -------------------------------------------------------------------------
 
-    /**
-     * Elimina el registro de un objeto del sistema.
-     * Solo se permite eliminar objetos en estado ENCONTRADO.
-     * No se elimina un objeto que ya fue reclamado o entregado para preservar
-     * la trazabilidad del proceso.
-     *
-     * @param id id del objeto a eliminar
-     * @throws ObjetoNoEncontradoException si no existe
-     * @throws ObjetoYaReclamadoException  si el objeto ya fue reclamado
-     * @throws ObjetoYaEntregadoException  si el objeto ya fue entregado
-     */
     public void eliminarObjeto(Long id) {
-        Objeto objeto = buscarObjeto(id);
+        Objeto objeto = buscarObjeto(id); // primero busca el objeto; si no existe, lanza error
 
+        // No se puede borrar si ya hay alguien que lo reclamó
         if (objeto.getEstado() == EstadoObjeto.RECLAMADO) {
             throw new ObjetoYaReclamadoException(
                     "No se puede eliminar el objeto con id " + id + " porque ya tiene una reclamación activa.");
         }
 
+        // No se puede borrar si ya fue entregado a su dueño
         if (objeto.getEstado() == EstadoObjeto.ENTREGADO) {
             throw new ObjetoYaEntregadoException(
                     "No se puede eliminar el objeto con id " + id + " porque ya fue entregado.");
         }
 
-        objetoRepository.deleteById(id);
+        objetoRepository.deleteById(id); // elimina el objeto de la base de datos
     }
 
     // -------------------------------------------------------------------------
     // VALIDACIÓN INTERNA
     // -------------------------------------------------------------------------
 
-    /**
-     * Verifica que los campos obligatorios del objeto no sean nulos ni vacíos.
-     * Si alguno falta, lanza DatosObjetoInvalidosException con un mensaje claro.
-     */
+    // Revisa que el objeto tenga todos los datos obligatorios antes de guardarlo
+    // Si falta alguno, lanza un error explicando cuál campo está vacío
     private void validarDatosObjeto(Objeto objeto) {
         if (objeto.getNombre() == null || objeto.getNombre().isBlank()) {
             throw new DatosObjetoInvalidosException("El nombre del objeto es obligatorio.");

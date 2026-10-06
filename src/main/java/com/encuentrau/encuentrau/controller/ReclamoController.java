@@ -10,19 +10,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.encuentrau.encuentrau.exception.ReclamoNoEncontradoException;
 import com.encuentrau.encuentrau.model.EstadoObjeto;
 import com.encuentrau.encuentrau.model.Objeto;
 import com.encuentrau.encuentrau.model.Reclamo;
 import com.encuentrau.encuentrau.service.ObjetoService;
 import com.encuentrau.encuentrau.service.ReclamoService;
 
-/**
- * Controller de reclamaciones.
- *
- * POST /reclamos       → registrar una reclamación
- * GET  /reclamos/{id}  → consultar una reclamación por id
- */
+// Puerta de entrada para todo lo relacionado con reclamos
+// Todas las rutas de esta clase empiezan con /reclamos
 @RestController
 @RequestMapping("/reclamos")
 public class ReclamoController {
@@ -30,57 +25,46 @@ public class ReclamoController {
     private final ReclamoService reclamoService;
     private final ObjetoService objetoService;
 
+    // Spring conecta automáticamente los servicios con este controller al arrancar
     public ReclamoController(ReclamoService reclamoService, ObjetoService objetoService) {
         this.reclamoService = reclamoService;
         this.objetoService = objetoService;
     }
 
-    /**
-     * Registra una nueva reclamación sobre un objeto existente.
-     *
-     * Flujo:
-     * 1. Consulta el objeto por objetoId (lanza ObjetoNoEncontradoException si no existe)
-     * 2. Verifica su estado en ReclamoService (lanza IllegalStateException si no es ENCONTRADO)
-     * 3. Guarda el reclamo
-     * 4. Cambia el estado del objeto a RECLAMADO
-     *
-     * Ejemplo: POST /reclamos?objetoId=1
-     * Body: { "usuario": { "id": 1 }, "descripcion": "Creo que es mío" }
-     */
+    // POST /reclamos?objetoId=1 → registra un reclamo sobre un objeto
+    // El número del objeto va en la URL y los datos del reclamo en el body
+    // Ejemplo body: { "usuario": { "id": 1 }, "descripcion": "Creo que es mío" }
     @PostMapping
     public ResponseEntity<?> registrarReclamo(
             @RequestParam Long objetoId,
             @RequestBody Reclamo reclamo) {
         try {
-            // 1. Obtener el objeto — lanza ObjetoNoEncontradoException si no existe
+            // Busca el objeto — si no existe lanza ObjetoNoEncontradoException (404)
             Objeto objeto = objetoService.buscarObjeto(objetoId);
 
-            // 2. Registrar el reclamo validando el estado del objeto
-            Reclamo nuevo = reclamoService.registrarReclamo(objetoId, objeto.getEstado().name(), reclamo);
+            // Registra el reclamo validando que el objeto esté en estado ENCONTRADO
+            Reclamo nuevo = reclamoService.registrarReclamo(objeto, objeto.getEstado().name(), reclamo);
 
-            // 3. Cambiar el estado del objeto a RECLAMADO
+            // Cambia el estado del objeto a RECLAMADO automáticamente
             objetoService.cambiarEstado(objetoId, EstadoObjeto.RECLAMADO);
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(nuevo);
+            return ResponseEntity.status(HttpStatus.CREATED).body(nuevo); // 201 Created
 
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage()); // 409 Conflict
         }
-        // ObjetoNoEncontradoException la maneja el GlobalExceptionHandler de Daniel
     }
 
-    /**
-     * Consulta una reclamación por su id.
-     *
-     * Ejemplo: GET /reclamos/1
-     */
+    // GET /reclamos/{id} → busca un reclamo específico por su número
     @GetMapping("/{id}")
     public ResponseEntity<?> buscarReclamo(@PathVariable Long id) {
-        try {
-            Reclamo reclamo = reclamoService.buscarReclamo(id);
-            return ResponseEntity.ok(reclamo);
-        } catch (ReclamoNoEncontradoException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        }
+        Reclamo reclamo = reclamoService.buscarReclamo(id);
+        return ResponseEntity.ok(reclamo); // 200 OK con el reclamo completo
+    }
+
+    // GET /reclamos → devuelve todos los reclamos registrados
+    @GetMapping
+    public ResponseEntity<?> listarReclamos() {
+        return ResponseEntity.ok(reclamoService.listarReclamos()); // 200 OK con la lista
     }
 }

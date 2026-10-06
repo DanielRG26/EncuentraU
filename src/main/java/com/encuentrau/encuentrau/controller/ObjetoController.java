@@ -17,101 +17,116 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/**
- * Controller que expone los endpoints REST para la gestión de objetos.
- * Solo recibe la solicitud HTTP, delega al servicio y devuelve la respuesta.
- * La lógica de negocio NO va aquí.
- */
+// Esta clase es la puerta de entrada de la aplicación
+// Recibe las peticiones que llegan desde afuera (como desde Postman o una app web)
+// y las pasa al servicio para que las procese
+// Todas las rutas de esta clase empiezan con /objetos
 @RestController
 @RequestMapping("/objetos")
 public class ObjetoController {
 
+    // El servicio es quien sabe qué hacer con cada petición
+    // El controller solo recibe y entrega, no toma decisiones
     private final ObjetoService objetoService;
 
+    // Spring conecta automáticamente el servicio con este controller al arrancar
     public ObjetoController(ObjetoService objetoService) {
         this.objetoService = objetoService;
     }
 
-    /**
-     * POST /objetos
-     * Registra un objeto encontrado. El estado siempre será ENCONTRADO.
-     *
-     * Body de ejemplo:
-     * {
-     *   "nombre": "Calculadora científica",
-     *   "descripcion": "Casio fx-991, color negro",
-     *   "categoria": "Electrónico",
-     *   "lugarEncontrado": "Salón 204",
-     *   "fechaEncontrado": "2026-10-04"
-     * }
-     */
+    // -------------------------------------------------------------------------
+    // Registrar un objeto nuevo → POST /objetos
+    // -------------------------------------------------------------------------
+
+    // Se activa cuando alguien envía una petición POST a /objetos
+    // El objeto llega en formato JSON dentro del cuerpo de la petición
+    // Responde con el objeto guardado y el código 201 (significa "creado con éxito")
     @PostMapping
     public ResponseEntity<Objeto> registrarObjeto(@RequestBody Objeto objeto) {
         Objeto guardado = objetoService.registrarObjeto(objeto);
         return ResponseEntity.status(HttpStatus.CREATED).body(guardado);
     }
 
-    /**
-     * GET /objetos
-     * Consulta todos los objetos registrados.
-     * Opcionalmente filtra por estado con el parámetro ?disponibles=true
-     * para obtener solo los objetos en estado ENCONTRADO.
-     */
+    // -------------------------------------------------------------------------
+    // Ver todos los objetos → GET /objetos
+    // -------------------------------------------------------------------------
+
+    // Se activa cuando alguien hace GET a /objetos
+    // ?disponibles=true  → solo los que aún no fueron reclamados (ENCONTRADO)
+    // ?estado=RECLAMADO  → solo los reclamados
+    // ?estado=ENTREGADO  → solo los entregados
+    // sin parámetros     → devuelve todos
     @GetMapping
     public ResponseEntity<List<Objeto>> listarObjetos(
-            @RequestParam(required = false, defaultValue = "false") boolean disponibles) {
+            @RequestParam(required = false, defaultValue = "false") boolean disponibles,
+            @RequestParam(required = false) EstadoObjeto estado) {
 
-        List<Objeto> lista = disponibles
-                ? objetoService.listarObjetosDisponibles()
-                : objetoService.listarObjetos();
+        List<Objeto> lista;
+
+        if (estado != null) {
+            // filtra por el estado que llegó en la URL (?estado=RECLAMADO, etc.)
+            lista = objetoService.listarObjetosPorEstado(estado);
+        } else if (disponibles) {
+            // atajo rápido para ver solo los disponibles (?disponibles=true)
+            lista = objetoService.listarObjetosDisponibles();
+        } else {
+            // sin parámetros: devuelve todos
+            lista = objetoService.listarObjetos();
+        }
 
         return ResponseEntity.ok(lista);
     }
 
-    /**
-     * GET /objetos/{id}
-     * Consulta un objeto específico por su id.
-     */
+    // -------------------------------------------------------------------------
+    // Buscar un objeto por su número → GET /objetos/{id}
+    // -------------------------------------------------------------------------
+
+    // Se activa cuando alguien hace GET a /objetos/3 (o cualquier número)
+    // El número de la URL se usa para buscar ese objeto específico
+    // Responde con el objeto encontrado y el código 200
     @GetMapping("/{id}")
     public ResponseEntity<Objeto> buscarObjeto(@PathVariable Long id) {
         Objeto objeto = objetoService.buscarObjeto(id);
         return ResponseEntity.ok(objeto);
     }
 
-    /**
-     * PUT /objetos/{id}
-     * Actualiza la información descriptiva de un objeto.
-     * Para cambiar el estado usar PUT /objetos/{id}/estado
-     */
+    // -------------------------------------------------------------------------
+    // Actualizar los datos de un objeto → PUT /objetos/{id}
+    // -------------------------------------------------------------------------
+
+    // Se activa cuando alguien hace PUT a /objetos/3 (o cualquier número)
+    // El número indica cuál objeto actualizar, y el JSON del cuerpo trae los nuevos datos
+    // Responde con el objeto ya actualizado y el código 200
     @PutMapping("/{id}")
     public ResponseEntity<Objeto> actualizarObjeto(
-            @PathVariable Long id,
-            @RequestBody Objeto datos) {
+            @PathVariable Long id,       // número del objeto que se quiere cambiar
+            @RequestBody Objeto datos) { // datos nuevos que llegan en el cuerpo de la petición
         Objeto actualizado = objetoService.actualizarObjeto(id, datos);
         return ResponseEntity.ok(actualizado);
     }
 
-    /**
-     * PUT /objetos/{id}/estado
-     * Cambia el estado de un objeto.
-     *
-     * Parámetro de query: ?nuevoEstado=RECLAMADO  (o ENTREGADO)
-     *
-     * Ejemplo: PUT /objetos/1/estado?nuevoEstado=RECLAMADO
-     */
+    // -------------------------------------------------------------------------
+    // Cambiar el estado de un objeto → PUT /objetos/{id}/estado
+    // -------------------------------------------------------------------------
+
+    // Endpoint separado solo para cambiar el estado, para no mezclar con actualizar datos
+    // Ejemplo: PUT /objetos/1/estado?nuevoEstado=RECLAMADO
+    // El nuevo estado se pasa como parámetro en la URL, no en el cuerpo
     @PutMapping("/{id}/estado")
     public ResponseEntity<Objeto> cambiarEstado(
-            @PathVariable Long id,
-            @RequestParam EstadoObjeto nuevoEstado) {
+            @PathVariable Long id,                    // número del objeto
+            @RequestParam EstadoObjeto nuevoEstado) { // nuevo estado que llega en la URL (?nuevoEstado=...)
         Objeto actualizado = objetoService.cambiarEstado(id, nuevoEstado);
         return ResponseEntity.ok(actualizado);
     }
 
-    /**
-     * DELETE /objetos/{id}
-     * Elimina un objeto del sistema.
-     * Solo se permite si el objeto está en estado ENCONTRADO.
-     */
+    // -------------------------------------------------------------------------
+    // Eliminar un objeto → DELETE /objetos/{id}
+    // -------------------------------------------------------------------------
+
+    // Se activa cuando alguien hace DELETE a /objetos/3 (o cualquier número)
+    // Solo se puede eliminar si el objeto todavía no fue reclamado ni entregado
+    // Responde con el código 204 (significa "listo, no hay nada que mostrar")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminarObjeto(@PathVariable Long id) {
         objetoService.eliminarObjeto(id);
